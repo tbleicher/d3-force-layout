@@ -15,6 +15,17 @@ import { interpolateSpectral, select } from 'd3';
 
 import './bubblechart.css';
 
+const fetchCompanies = () => {
+  const range = 21;
+
+  const companies = new Array(range).fill('name').map((_, i) => ({
+    name: `company_${i + 1}`,
+    logo_image_url: `./logos/${i + 1}.png`
+  }));
+
+  return Promise.resolve(companies);
+};
+
 const ticked = node => () => {
   node.attr('cx', d => d.x).attr('cy', d => d.y);
 };
@@ -31,23 +42,42 @@ class BubbleChart extends React.Component {
   constructor(props) {
     super(props);
 
-    this.colorScale = null;
-
+    this.id = `bubblechart_${Math.random()}`.replace('.', '');
     this.node = null;
     this.nodes = null;
     this.offset = 0;
     this.simulation = null;
 
+    this.state = {
+      companies: []
+    };
+
     this.svgRef = React.createRef();
   }
 
   componentDidMount() {
-    const range = 20;
-    const nodes = new Array(range).fill(1).map((d, i) => {
-      return { name: `l${i + 1}`, colorIndex: i, r: Math.random() * 40 + 30 };
-    });
+    const { width, height } = this.props;
 
-    this.setState({ nodes }, this.initChart);
+    fetchCompanies().then(_companies => {
+      const colorScale = scaleSequential(interpolateSpectral).domain([
+        0,
+        _companies.length
+      ]);
+
+      const companies = _companies.map((company, i) => {
+        return {
+          ...company,
+          color: colorScale(i),
+          pattern: `company_${i + 1}`,
+          radius: Math.round(Math.random() * 50 + 30),
+          r: Math.round(Math.random() * 50 + 30),
+          x: width * 0.1 + width * 0.8 * Math.random(),
+          y: height * 0.1 + height * 0.8 * Math.random()
+        };
+      });
+
+      this.setState({ companies }, this.initChart);
+    });
   }
 
   getChartSize = () => {
@@ -59,16 +89,26 @@ class BubbleChart extends React.Component {
   };
 
   initChart = () => {
+    const { COUNT, width, height } = this.props;
     const { chartWidth, chartHeight } = this.getChartSize();
-    const { nodes } = this.state;
+    const { companies } = this.state;
 
-    this.colorScale = scaleSequential(interpolateSpectral).domain([
-      0,
-      nodes.length
-    ]);
+    const svg = select(`#${this.id}`)
+      .append('svg')
+      .attr('width', width)
+      .attr('height', height);
+
+    svg
+      .append('defs')
+      .append('filter')
+      .attr('id', 'dropShadow')
+      .append('feGaussianBlur')
+      .attr('in', 'SourceGraphic')
+      .attr('stdDeviation', 5);
+
+    this.node = svg.selectAll('.node');
 
     this.simulation = forceSimulation()
-      .force('link', forceLink().id(d => d.index))
       .force(
         'collide',
         forceCollide(d => d.r + 5)
@@ -80,28 +120,30 @@ class BubbleChart extends React.Component {
       .force('y', forceY(chartHeight / 2))
       .force('x', forceX(chartWidth / 2));
 
-    this.node = select('#svgId')
-      .append('g')
-      .attr('class', 'nodes')
-      .selectAll('circle');
+    // this.node = select('#svgId')
+    //  .append('g')
+    //  .attr('class', 'nodes')
+    //  .selectAll('circle');
     // .data(nodes.slice(0, 10), d => d.name);
 
     this.update();
 
-    this.simulation.nodes(nodes).on('tick', ticked(this.node));
+    this.simulation
+      .nodes(companies.slice(0, COUNT))
+      .on('tick', ticked(this.node));
     this.timeout = setInterval(this.update, this.props.DURATION);
   };
 
   update = () => {
     // Apply the general update pattern to the nodes.
-    const { nodes: _nodes } = this.state;
+    const { companies } = this.state;
 
     if (this.nodes && this.nodes.length === this.props.COUNT) {
       this.nodes.shift();
-      this.offset = (this.offset + 1) % _nodes.length;
+      this.offset = (this.offset + 1) % companies.length;
     } else {
-      this.nodes = _nodes
-        .concat(_nodes)
+      this.nodes = companies
+        .concat(companies)
         .slice(this.offset, this.offset + this.props.COUNT);
     }
 
@@ -110,25 +152,22 @@ class BubbleChart extends React.Component {
 
   updateSimulation = nodes => {
     const { DURATION } = this.props;
-    //
-    
 
-
-    
     this.node = this.node.data(nodes, d => d.name);
 
     this.node
       .exit()
       .transition()
-      //.delay(DURATION)
-       .duration(DURATION)
-       .attr('r', 0);
+      .duration(DURATION)
+      .attr('r', 0);
 
     this.node = this.node
       .enter()
       .append('circle')
       .attr('r', 0)
-      .attr('fill', d => this.colorScale(d.colorIndex))
+      .attr('fill', d => d.color)
+      .attr('class', 'node')
+      .attr('filter', 'url(#dropShadow)')
       .merge(this.node);
 
     this.node
@@ -144,7 +183,8 @@ class BubbleChart extends React.Component {
   render() {
     const { width, height } = this.props;
 
-    return <svg id="svgId" ref={this.svgRef} width={width} height={height} />;
+    // return <svg id="svgId" ref={this.svgRef} width={width} height={height} />;
+    return <div id={this.id} />;
   }
 }
 
